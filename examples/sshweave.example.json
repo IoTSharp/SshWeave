@@ -1,0 +1,33 @@
+{
+  "schema": "sshweave.config.v1",
+  "sshExecutable": "ssh",
+  "defaultProfile": "station",
+  "profiles": [
+    {
+      "name": "station",
+      "host": "bastion.example.com",
+      "port": 22,
+      "user": "sshweave",
+      "hostKeyPolicy": "accept-new",
+      "batchMode": false,
+      "compression": false,
+      "allowRemoteClients": false,
+      "connectTimeoutSeconds": 15,
+      "startupTimeoutSeconds": 60,
+      "serverAliveIntervalSeconds": 30,
+      "serverAliveCountMax": 3,
+      "socks": {
+        "listenAddress": "127.0.0.1",
+        "port": 1080
+      },
+      "tcpForwards": [
+        {
+          "listenAddress": "127.0.0.1",
+          "localPort": 2222,
+          "destinationHost": "10.20.0.10",
+          "destinationPort": 22
+        }
+      ]
+    }
+  ]
+}
