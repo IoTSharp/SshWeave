@@ -3,9 +3,17 @@ using SshWeave.Configuration;
 
 namespace SshWeave.Ssh;
 
+public sealed record SshRuntimeForwardPlan(
+    SocksForward? Socks,
+    IReadOnlyList<TcpForward> TcpForwards);
+
 public static class SshArgumentBuilder
 {
-    public static IReadOnlyList<string> Build(SshProfile profile, bool configurationDump = false)
+    public static IReadOnlyList<string> Build(
+        SshProfile profile,
+        bool configurationDump = false,
+        SshRuntimeForwardPlan? runtimeForwards = null,
+        bool verbose = false)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
@@ -18,6 +26,10 @@ public static class SshArgumentBuilder
         {
             arguments.Add("-N");
             arguments.Add("-T");
+            if (verbose)
+            {
+                arguments.Add("-v");
+            }
         }
 
         arguments.Add("-p");
@@ -41,7 +53,13 @@ public static class SshArgumentBuilder
             arguments.Add(Path.GetFullPath(profile.IdentityFile));
         }
 
-        if (profile.BatchMode)
+        if (profile.AuthenticationMode == AuthenticationModes.Password)
+        {
+            AddOption(arguments, "BatchMode=no");
+            AddOption(arguments, "PreferredAuthentications=password,keyboard-interactive");
+            AddOption(arguments, "PubkeyAuthentication=no");
+        }
+        else if (profile.BatchMode)
         {
             AddOption(arguments, "BatchMode=yes");
             AddOption(arguments, "PasswordAuthentication=no");
@@ -52,18 +70,26 @@ public static class SshArgumentBuilder
             }
         }
 
+        if (profile.AuthenticationMode == AuthenticationModes.KeyFile)
+        {
+            AddOption(arguments, "IdentitiesOnly=yes");
+            AddOption(arguments, "PreferredAuthentications=publickey");
+        }
+
         if (profile.Compression)
         {
             arguments.Add("-C");
         }
 
-        if (profile.Socks is not null)
+        SocksForward? socks = runtimeForwards?.Socks ?? profile.Socks;
+        IReadOnlyList<TcpForward> tcpForwards = runtimeForwards?.TcpForwards ?? profile.TcpForwards;
+        if (socks is not null)
         {
             arguments.Add("-D");
-            arguments.Add(FormatEndpoint(profile.Socks.ListenAddress, profile.Socks.Port));
+            arguments.Add(FormatEndpoint(socks.ListenAddress, socks.Port));
         }
 
-        foreach (TcpForward forward in profile.TcpForwards)
+        foreach (TcpForward forward in tcpForwards)
         {
             arguments.Add("-L");
             arguments.Add(

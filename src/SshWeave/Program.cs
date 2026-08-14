@@ -3,6 +3,7 @@ using SshWeave.Cli;
 using SshWeave.Configuration;
 using SshWeave.Server;
 using SshWeave.Ssh;
+using SshWeave.Tun;
 
 namespace SshWeave;
 
@@ -113,6 +114,12 @@ internal static class Program
         {
             Console.WriteLine(
                 $"TCP：{forward.ListenAddress}:{forward.LocalPort} -> {forward.DestinationHost}:{forward.DestinationPort}");
+        }
+        if (TransparentTcpSession.IsEnabled(profile))
+        {
+            Console.WriteLine(
+                $"透明 TCP：{profile.TransparentTcp.AdapterName} -> "
+                + string.Join(", ", profile.TransparentTcp.DestinationCidrs));
         }
 
         return await SshConnectionService.ConnectAsync(configuration, profile, cancellationToken);
@@ -251,7 +258,7 @@ internal static class Program
               sshweave server-install --authorized-key <公钥文件> [--user <用户名>] [--no-reload]
 
             能力边界：
-              默认模式支持 SOCKS5 和任意 TCP 端口映射，包括 HTTP、HTTPS、SSH 和数据库。
+              支持 SOCKS5、任意 TCP 端口映射和 Windows Wintun 目标网段透明 TCP 路由。
               标准 SSH 端口转发不承载 ICMP 或通用 UDP；真实 ping/UDP 需要 PermitTunnel 和回程路由或 NAT。
             """);
     }

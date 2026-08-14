@@ -74,6 +74,10 @@ public static class ConfigurationStore
                     Host = "bastion.example.com",
                     User = "sshweave",
                     Socks = new SocksForward(),
+                    TransparentTcp = new TransparentTcpRoute
+                    {
+                        DestinationCidrs = ["10.51.0.0/16"],
+                    },
                     TcpForwards =
                     [
                         new TcpForward
@@ -100,5 +104,52 @@ public static class ConfigurationStore
             SshWeaveJsonContext.Default.SshWeaveConfiguration,
             cancellationToken);
         await stream.WriteAsync(Encoding.UTF8.GetBytes(Environment.NewLine), cancellationToken);
+    }
+
+    public static async Task SaveAsync(
+        string path,
+        SshWeaveConfiguration configuration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ConfigurationValidator.Validate(configuration);
+
+        string fullPath = Path.GetFullPath(path);
+        string? directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            // 同目录临时文件保证最终替换不跨卷，避免界面保存时留下半份 JSON。
+            await using (FileStream stream = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                useAsync: true))
+            {
+                await JsonSerializer.SerializeAsync(
+                    stream,
+                    configuration,
+                    SshWeaveJsonContext.Default.SshWeaveConfiguration,
+                    cancellationToken);
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(Environment.NewLine), cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+            }
+
+            File.Move(temporaryPath, fullPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 }

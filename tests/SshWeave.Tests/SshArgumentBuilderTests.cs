@@ -46,4 +46,41 @@ public sealed class SshArgumentBuilderTests
         Assert.Contains("127.0.0.1:2222:[2001:db8::10]:22", arguments);
         Assert.Equal("sshweave@[2001:db8::1]", arguments[^1]);
     }
+
+    [Fact]
+    public void BuildRestrictsPasswordAuthenticationToInteractivePasswordMethods()
+    {
+        SshProfile profile = TestConfiguration.Create().Profiles[0];
+        profile.AuthenticationMode = AuthenticationModes.Password;
+
+        IReadOnlyList<string> arguments = SshArgumentBuilder.Build(profile);
+
+        Assert.Contains("BatchMode=no", arguments);
+        Assert.Contains("PreferredAuthentications=password,keyboard-interactive", arguments);
+        Assert.Contains("PubkeyAuthentication=no", arguments);
+        Assert.DoesNotContain("BatchMode=yes", arguments);
+    }
+
+    [Fact]
+    public void BuildCanRedirectPublicListenersToHiddenMeteredEndpoints()
+    {
+        SshProfile profile = TestConfiguration.Create().Profiles[0];
+        SshRuntimeForwardPlan plan = new(
+            new SocksForward { Port = 41080 },
+            [
+                new TcpForward
+                {
+                    LocalPort = 42222,
+                    DestinationHost = "10.20.0.10",
+                    DestinationPort = 22,
+                },
+            ]);
+
+        IReadOnlyList<string> arguments = SshArgumentBuilder.Build(profile, runtimeForwards: plan);
+
+        Assert.Contains("127.0.0.1:41080", arguments);
+        Assert.Contains("127.0.0.1:42222:10.20.0.10:22", arguments);
+        Assert.DoesNotContain("127.0.0.1:1080", arguments);
+        Assert.DoesNotContain("127.0.0.1:2222:10.20.0.10:22", arguments);
+    }
 }

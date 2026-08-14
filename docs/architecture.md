@@ -17,6 +17,39 @@ SshWeave 是控制面和本地数据桥接程序。SSH 加密、认证、主机�
 通道由系统 OpenSSH 实现，避免自行实现密码协议。远端连接的源地址是 SSH 服务器自身，目标
 设备按普通服务器访问处理，因此不需要修改 SSH 服务器的路由、NAT 或目标网络的返回路由。
 
+## Windows 透明 TCP 数据路径
+
+SW-5 的 Windows 候选仍使用默认 `direct-tcpip` 边界，不开启远端 `PermitTunnel`。本地
+Wintun 只接收明确目标 CIDR 的包，固定版本的 `tun2socks` 使用 gVisor 用户态 TCP/IP 栈把
+TCP 流转换为 SOCKS5 连接，再进入现有 OpenSSH 动态转发：
+
+```text
+Xshell -> 10.51.12.35:22 -> 目标 CIDR 活动路由 -> Wintun -> tun2socks
+       -> 127.0.0.1 SOCKS5 -> OpenSSH direct-tcpip -> SSH 服务器 -> 目标设备
+```
+
+启动顺序为 OpenSSH/SOCKS5、`tun2socks`/Wintun、TUN 地址、目标路由；停止顺序相反。
+配置拒绝默认路由、非规范 CIDR、TUN 地址重叠和其它网卡已有的同前缀路由。同名网卡使用
+命名信号量避免并发接管；再次启动时只清理同名网卡上的遗留活动路由，不覆盖其它网卡。
+CLI 和桌面同时监视两个进程，任一侧退出都会撤销目标路由。Windows 网络配置需要管理员
+权限，但不会修改远端主机、默认路由、DNS、NAT 或 IP forwarding。
+
+## Windows 桌面控制面
+
+Windows 桌面控制台使用 MewUI/Direct2D，只负责配置、生命周期和观测。密码或私钥口令不进入
+`sshweave.config.v1`，而是在连接建立期间由当前用户限定的一次性命名管道提供给
+`SSH_ASKPASS`；OpenSSH 就绪后立即关闭管道。私钥内容仍只由系统 OpenSSH 读取。
+
+为了在不接管 SSH 协议的前提下取得实时流量，桌面版让 OpenSSH 监听随机隐藏回环端口，并在
+配置的公开本地端口前启动透明 TCP 计量代理：
+
+```text
+本地应用 -> SshWeave 计量入口 -> 隐藏回环端口 -> 系统 OpenSSH -> SSH 服务器 -> 内网目标
+```
+
+计量层只累加连接生命周期和两个方向的字节数，不解析、记录或持久化 SOCKS5/TCP 载荷。
+OpenSSH `-v` 标准错误作为实时网络诊断显示在内存日志中；当前版本不把日志写盘。
+
 ## 为什么默认模式不能承载 `ping` 和 UDP
 
 OpenSSH 的动态转发实现 SOCKS4/5 `CONNECT`，本地转发使用 `direct-tcpip`。两者都描述一个

@@ -1,8 +1,8 @@
 # SshWeave
 
-SshWeave 通过系统 OpenSSH 客户端复用 SSH 服务器的网络可达性。客户端是 .NET 10 Native
-AOT 命令行程序；服务端不常驻代理，只需要 OpenSSH。默认模式不修改服务端路由、NAT、
-IP forwarding 或默认网关。
+SshWeave 通过系统 OpenSSH 客户端复用 SSH 服务器的网络可达性。客户端包含 .NET 10 Native
+AOT 命令行程序和基于 MewUI 的 Windows 桌面控制台；服务端不常驻代理，只需要 OpenSSH。
+默认模式不修改服务端路由、NAT、IP forwarding 或默认网关。
 
 ## 能力边界
 
@@ -10,6 +10,7 @@ IP forwarding 或默认网关。
 | --- | --- | --- |
 | HTTP/HTTPS、数据库、自定义 TCP | 支持 | SOCKS5 或显式本地 TCP 映射 |
 | SSH 到内网设备 | 支持 | 本地 TCP 映射，或生成 `ProxyCommand` 后直接 `ssh user@目标IP` |
+| Windows 目标网段透明 TCP | 验证中 | Wintun + 本地 `tun2socks`，应用直接连接目标 IP 和端口 |
 | 服务端解析的内网域名 | 支持 | 使用 `socks5h://`，域名交给 SSH 服务器解析 |
 | 通用 UDP | 不支持 | 标准 OpenSSH 动态/本地转发没有 UDP 通道 |
 | 真实 ICMP `ping` | 不支持 | ICMP 没有端口，不能转换为 `direct-tcpip` |
@@ -34,6 +35,18 @@ Linux x64 需要在 Linux 构建机运行：
 
 生成物位于 `artifacts/publish/<RID>`。SshWeave 自身没有 NuGet 运行时依赖，但客户端必须能
 执行 OpenSSH `ssh`。
+
+Windows 桌面控制台使用 MewUI/Direct2D，并单独发布：
+
+```powershell
+.\scripts\publish.ps1 -RuntimeIdentifier win-x64 -Desktop
+```
+
+桌面控制台管理多个连接账户，支持系统默认认证、密码和私钥文件。密码及密钥口令只在本次
+连接期间驻留内存，通过当前用户可访问的一次性命名管道交给 `SSH_ASKPASS`，不会写入配置、
+命令行或日志。界面可启停 SOCKS5、TCP 映射和压缩，显示 OpenSSH 交互日志、实时连接数与
+本地计量代理统计的上下行字节；关闭主窗口后继续驻留 Windows 托盘，右键菜单可重新打开、
+连接、断开和退出。远端系统用户写操作未在首版启用。
 
 ### 2. 创建只能使用通道的服务端用户
 
@@ -82,6 +95,7 @@ sshweave init
       "host": "bastion.example.com",
       "port": 22,
       "user": "sshweave",
+      "authenticationMode": "keyFile",
       "identityFile": "C:\\Users\\operator\\.ssh\\sshweave_ed25519",
       "hostKeyPolicy": "strict",
       "batchMode": true,
@@ -150,6 +164,28 @@ ssh device-user@10.20.0.10
 桥接 SSH 标准输入/输出。若 `sshweave` 不在 `PATH`，生成时使用
 `--executable <绝对路径>`。
 
+### 6. Windows 透明 TCP 路由候选
+
+Windows 发布物包含经过固定版本和 SHA-256 校验的 `tun2socks 2.6.0` 与 Wintun `0.14.1`。
+在连接配置中启用目标网段：
+
+```json
+"transparentTcp": {
+  "enabled": true,
+  "adapterName": "SshWeave",
+  "adapterIpv4Cidr": "198.18.0.1/30",
+  "mtu": 1500,
+  "routeMetric": 5,
+  "destinationCidrs": ["10.51.0.0/16"]
+}
+```
+
+保持 SOCKS5 同时启用，并以管理员身份运行 CLI 或桌面控制台。连接就绪后，TCP 应用可直接
+访问目标地址，例如 Xshell 连接 `10.51.12.35:22`，无需配置代理。SshWeave 只写入
+`store=active` 的目标路由；正常断开或任一数据面进程退出时会撤销路由和 TUN 地址。
+该候选不承载真实 ICMP 或通用 UDP，管理员实机、异常回滚和 Linux TUN 证据仍按 SW-5
+下一步验证执行。
+
 ## 安全说明
 
 - 通道用户可以尝试连接 SSH 服务器可达的任意 TCP 目标，权限边界等价于该服务器的网络
@@ -158,6 +194,8 @@ ssh device-user@10.20.0.10
   `allowRemoteClients: true`，并自行承担把内网入口暴露给局域网的风险。
 - 所有进程参数通过结构化参数列表传给 `ssh`，不会交给本地 shell 拼接。
 - SshWeave 不记录认证口令、私钥内容或通道载荷。
+- Windows 桌面版通过隐藏回环端口承接 OpenSSH 转发，并在公开本地入口前计量连接与字节；
+  不解析 SOCKS5 或 TCP 载荷内容。
 - 不建议在生产跳板机使用 TAP/桥接；二层广播、地址冲突和环路的影响面明显更大。
 
 更详细的设计与 L3 取舍见 [架构说明](docs/architecture.md)，后续范围见
@@ -170,4 +208,5 @@ dotnet restore .\SshWeave.slnx
 dotnet build .\SshWeave.slnx --configuration Release
 dotnet test .\SshWeave.slnx --configuration Release --no-build
 dotnet publish .\src\SshWeave\SshWeave.csproj --configuration Release --runtime win-x64
+dotnet publish .\src\SshWeave.Desktop.Windows\SshWeave.Desktop.Windows.csproj --configuration Release --runtime win-x64
 ```

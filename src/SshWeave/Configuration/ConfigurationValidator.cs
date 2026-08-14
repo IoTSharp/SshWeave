@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using SshWeave.Networking;
 
 namespace SshWeave.Configuration;
 
@@ -19,6 +20,7 @@ public static partial class ConfigurationValidator
         {
             errors.Add("sshExecutable 不能为空或包含控制字符。");
         }
+        ValidatePath(configuration.Tun2SocksExecutable, "tun2SocksExecutable", errors);
 
         if (configuration.Profiles is null || configuration.Profiles.Count == 0)
         {
@@ -91,6 +93,24 @@ public static partial class ConfigurationValidator
             errors.Add($"{prefix}.user 不是安全的 SSH 用户名。");
         }
 
+        if (profile.AuthenticationMode is not AuthenticationModes.Auto
+            and not AuthenticationModes.Password
+            and not AuthenticationModes.KeyFile)
+        {
+            errors.Add($"{prefix}.authenticationMode 只允许 auto、password 或 keyFile。");
+        }
+
+        if (profile.AuthenticationMode == AuthenticationModes.Password && profile.BatchMode)
+        {
+            errors.Add($"{prefix} 使用密码认证时不能启用 batchMode。");
+        }
+
+        if (profile.AuthenticationMode == AuthenticationModes.KeyFile
+            && string.IsNullOrWhiteSpace(profile.IdentityFile))
+        {
+            errors.Add($"{prefix} 使用 keyFile 认证时必须设置 identityFile。");
+        }
+
         ValidatePort(profile.Port, $"{prefix}.port", errors);
         ValidateRange(profile.ConnectTimeoutSeconds, 1, 120, $"{prefix}.connectTimeoutSeconds", errors);
         ValidateRange(profile.StartupTimeoutSeconds, 5, 600, $"{prefix}.startupTimeoutSeconds", errors);
@@ -146,6 +166,83 @@ public static partial class ConfigurationValidator
             if (!localEndpoints.Add(endpoint))
             {
                 errors.Add($"{prefix} 的本地监听端点重复：{endpoint}。");
+            }
+        }
+
+        ValidateTransparentTcp(profile, prefix, errors);
+    }
+
+    private static void ValidateTransparentTcp(SshProfile profile, string prefix, List<string> errors)
+    {
+        TransparentTcpRoute? route = profile.TransparentTcp;
+        if (route is null)
+        {
+            errors.Add($"{prefix}.transparentTcp 不能为 null。");
+            return;
+        }
+        if (!route.Enabled)
+        {
+            return;
+        }
+
+        if (profile.Socks is null)
+        {
+            errors.Add($"{prefix}.transparentTcp 启用时必须同时启用 socks。");
+        }
+        if (!AdapterNameRegex().IsMatch(route.AdapterName ?? string.Empty))
+        {
+            errors.Add($"{prefix}.transparentTcp.adapterName 只能包含字母、数字、空格、点、下划线和连字符。");
+        }
+        ValidateRange(route.Mtu, 1280, 9000, $"{prefix}.transparentTcp.mtu", errors);
+        ValidateRange(route.RouteMetric, 1, 9999, $"{prefix}.transparentTcp.routeMetric", errors);
+
+        if (!Ipv4Cidr.TryParse(
+                route.AdapterIpv4Cidr,
+                requireNetworkAddress: false,
+                out Ipv4Cidr adapterCidr,
+                out string adapterError))
+        {
+            errors.Add($"{prefix}.transparentTcp.adapterIpv4Cidr {adapterError}");
+            return;
+        }
+        if (adapterCidr.PrefixLength is < 16 or > 30)
+        {
+            errors.Add($"{prefix}.transparentTcp.adapterIpv4Cidr 前缀长度必须在 16 到 30 之间。");
+        }
+
+        IPAddress adapterAddress = IPAddress.Parse(route.AdapterIpv4Cidr.Split('/')[0]);
+        uint adapterValue = Ipv4Cidr.ToUInt32(adapterAddress);
+        if (adapterValue == adapterCidr.Network)
+        {
+            errors.Add($"{prefix}.transparentTcp.adapterIpv4Cidr 必须指定可用主机地址，不能是网络地址。");
+        }
+
+        if (route.DestinationCidrs is null || route.DestinationCidrs.Count == 0)
+        {
+            errors.Add($"{prefix}.transparentTcp.destinationCidrs 至少需要一个目标网段。");
+            return;
+        }
+
+        HashSet<string> destinations = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string? value in route.DestinationCidrs)
+        {
+            string field = $"{prefix}.transparentTcp.destinationCidrs";
+            if (!Ipv4Cidr.TryParse(value, requireNetworkAddress: true, out Ipv4Cidr destination, out string error))
+            {
+                errors.Add($"{field} 中的 {value ?? "null"} {error}");
+                continue;
+            }
+            if (destination.PrefixLength == 0)
+            {
+                errors.Add($"{field} 禁止接管默认路由 0.0.0.0/0。");
+            }
+            if (destination.Overlaps(adapterCidr))
+            {
+                errors.Add($"{field} 中的 {destination} 与虚拟网卡地址重叠。");
+            }
+            if (!destinations.Add(destination.ToString()))
+            {
+                errors.Add($"{field} 中的目标网段重复：{destination}。");
             }
         }
     }
@@ -206,4 +303,7 @@ public static partial class ConfigurationValidator
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_.-]{0,63}$", RegexOptions.CultureInvariant)]
     internal static partial Regex UserNameRegex();
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$", RegexOptions.CultureInvariant)]
+    private static partial Regex AdapterNameRegex();
 }

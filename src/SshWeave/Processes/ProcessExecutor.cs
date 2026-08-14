@@ -9,12 +9,19 @@ public sealed record ProcessResult(int ExitCode, string StandardOutput, string S
 
 public static class ProcessExecutor
 {
+    public static Task<ProcessResult> RunCapturedAsync(
+        string executable,
+        IEnumerable<string> arguments,
+        CancellationToken cancellationToken = default) =>
+        RunCapturedAsync(executable, arguments, workingDirectory: null, cancellationToken);
+
     public static async Task<ProcessResult> RunCapturedAsync(
         string executable,
         IEnumerable<string> arguments,
+        string? workingDirectory,
         CancellationToken cancellationToken = default)
     {
-        ProcessStartInfo startInfo = CreateStartInfo(executable, arguments);
+        ProcessStartInfo startInfo = CreateStartInfo(executable, arguments, workingDirectory);
         startInfo.RedirectStandardOutput = true;
         startInfo.RedirectStandardError = true;
 
@@ -43,9 +50,10 @@ public static class ProcessExecutor
     public static Process StartInteractive(
         string executable,
         IEnumerable<string> arguments,
-        IReadOnlyDictionary<string, string?>? environment = null)
+        IReadOnlyDictionary<string, string?>? environment = null,
+        string? workingDirectory = null)
     {
-        ProcessStartInfo startInfo = CreateStartInfo(executable, arguments);
+        ProcessStartInfo startInfo = CreateStartInfo(executable, arguments, workingDirectory);
         if (environment is not null)
         {
             foreach ((string key, string? value) in environment)
@@ -61,6 +69,52 @@ public static class ProcessExecutor
             throw new InvalidOperationException($"无法启动进程：{executable}");
         }
 
+        return process;
+    }
+
+    public static Process StartObserved(
+        string executable,
+        IEnumerable<string> arguments,
+        Action<string, bool> output,
+        IReadOnlyDictionary<string, string?>? environment = null,
+        string? workingDirectory = null)
+    {
+        ProcessStartInfo startInfo = CreateStartInfo(executable, arguments, workingDirectory);
+        startInfo.CreateNoWindow = true;
+        startInfo.RedirectStandardOutput = true;
+        startInfo.RedirectStandardError = true;
+        if (environment is not null)
+        {
+            foreach ((string key, string? value) in environment)
+            {
+                startInfo.Environment[key] = value;
+            }
+        }
+
+        Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
+        process.OutputDataReceived += (_, eventArgs) =>
+        {
+            if (eventArgs.Data is not null)
+            {
+                output(eventArgs.Data, false);
+            }
+        };
+        process.ErrorDataReceived += (_, eventArgs) =>
+        {
+            if (eventArgs.Data is not null)
+            {
+                output(eventArgs.Data, true);
+            }
+        };
+
+        if (!process.Start())
+        {
+            process.Dispose();
+            throw new InvalidOperationException($"无法启动进程：{executable}");
+        }
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
         return process;
     }
 
@@ -80,12 +134,16 @@ public static class ProcessExecutor
         }
     }
 
-    private static ProcessStartInfo CreateStartInfo(string executable, IEnumerable<string> arguments)
+    private static ProcessStartInfo CreateStartInfo(
+        string executable,
+        IEnumerable<string> arguments,
+        string? workingDirectory)
     {
         ProcessStartInfo startInfo = new()
         {
             FileName = executable,
             UseShellExecute = false,
+            WorkingDirectory = workingDirectory ?? string.Empty,
         };
 
         foreach (string argument in arguments)

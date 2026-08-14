@@ -7,4 +7,7 @@
     <PackageVersion Include="xunit.v3" Version="3.1.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
+  <ItemGroup Label="Desktop dependencies">
+    <PackageVersion Include="Aprillz.MewUI.Windows" Version="0.19.1" />
+  </ItemGroup>
 </Project>

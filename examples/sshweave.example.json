@@ -8,6 +8,7 @@
       "host": "bastion.example.com",
       "port": 22,
       "user": "sshweave",
+      "authenticationMode": "keyFile",
       "hostKeyPolicy": "accept-new",
       "batchMode": false,
       "compression": false,
@@ -19,6 +20,16 @@
       "socks": {
         "listenAddress": "127.0.0.1",
         "port": 1080
+      },
+      "transparentTcp": {
+        "enabled": true,
+        "adapterName": "SshWeave",
+        "adapterIpv4Cidr": "198.18.0.1/30",
+        "mtu": 1500,
+        "routeMetric": 5,
+        "destinationCidrs": [
+          "10.51.0.0/16"
+        ]
       },
       "tcpForwards": [
         {

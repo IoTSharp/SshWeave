@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/SshWeave/SshWeave.csproj" />
+    <Project Path="src/SshWeave.Desktop.Windows/SshWeave.Desktop.Windows.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SshWeave.Tests/SshWeave.Tests.csproj" />
@@ -14,5 +15,6 @@
     <File Path="Directory.Packages.props" />
     <File Path="global.json" />
     <File Path="scripts/publish.ps1" />
+    <File Path="scripts/install-windows-tun-dependencies.ps1" />
   </Folder>
 </Solution>

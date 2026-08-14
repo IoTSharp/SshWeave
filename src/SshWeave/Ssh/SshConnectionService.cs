@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using SshWeave.Configuration;
 using SshWeave.Processes;
+using SshWeave.Tun;
 
 namespace SshWeave.Ssh;
 
@@ -36,6 +37,12 @@ public static class SshConnectionService
                 : parsed.StandardError.Trim();
             throw new ConfigurationException($"OpenSSH 拒绝连接配置：{detail}");
         }
+
+        await TransparentTcpSession.CheckAsync(
+            configuration,
+            profile,
+            requireElevation: true,
+            cancellationToken);
     }
 
     public static async Task<int> ConnectAsync(
@@ -49,8 +56,28 @@ public static class SshConnectionService
         using Process process = ProcessExecutor.StartInteractive(
             configuration.SshExecutable,
             SshArgumentBuilder.Build(profile));
+        TransparentTcpSession? transparentTcp = null;
         try
         {
+            if (TransparentTcpSession.IsEnabled(profile))
+            {
+                await WaitForSocksAsync(process, profile.Socks!, profile.StartupTimeoutSeconds, cancellationToken);
+                transparentTcp = await TransparentTcpSession.StartAsync(
+                    configuration,
+                    profile,
+                    (line, isError) => (isError ? Console.Error : Console.Out).WriteLine($"[TUN] {line}"),
+                    cancellationToken);
+
+                Task sshExit = process.WaitForExitAsync(cancellationToken);
+                Task<int> tunExit = transparentTcp.WaitForExitAsync(cancellationToken);
+                Task firstExit = await Task.WhenAny(sshExit, tunExit);
+                if (firstExit == tunExit && !process.HasExited)
+                {
+                    int exitCode = await tunExit;
+                    throw new ConfigurationException($"透明 TCP 数据面意外退出，退出码为 {exitCode}。");
+                }
+            }
+
             await process.WaitForExitAsync(cancellationToken);
             return process.ExitCode;
         }
@@ -58,6 +85,14 @@ public static class SshConnectionService
         {
             ProcessExecutor.TryKill(process);
             return 130;
+        }
+        finally
+        {
+            if (transparentTcp is not null)
+            {
+                await transparentTcp.DisposeAsync();
+            }
+            ProcessExecutor.TryKill(process);
         }
     }
 
@@ -121,7 +156,7 @@ public static class SshConnectionService
         }
     }
 
-    private static void ValidateLocalFiles(SshProfile profile)
+    public static void ValidateLocalFiles(SshProfile profile)
     {
         if (!string.IsNullOrWhiteSpace(profile.IdentityFile) && !File.Exists(profile.IdentityFile))
         {
