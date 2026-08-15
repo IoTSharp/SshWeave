@@ -9,6 +9,9 @@
     <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
-    <Version>0.1.0</Version>
+    <Version>0.3.5</Version>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
 </Project>

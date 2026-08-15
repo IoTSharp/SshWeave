@@ -10,4 +10,9 @@
   <ItemGroup>
     <ProjectReference Include="../../src/SshWeave/SshWeave.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../../src/SshWeave.Desktop.Windows/app.manifest"
+          Link="SshWeave.Desktop.Windows.app.manifest"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -77,7 +77,11 @@ public sealed class ObservedSshSession : IAsyncDisposable
             List<SessionLogEntry> startupLog = [];
             process = ProcessExecutor.StartObserved(
                 configuration.SshExecutable,
-                SshArgumentBuilder.Build(profile, runtimeForwards: plan.Forwards, verbose: true),
+                SshArgumentBuilder.Build(
+                    profile,
+                    runtimeForwards: plan.Forwards,
+                    verbose: true,
+                    forceBatchMode: broker is null),
                 (line, isError) =>
                 {
                     SessionLogEntry entry = CreateOpenSshLog(line, isError);

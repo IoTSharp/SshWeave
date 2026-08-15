@@ -16,8 +16,13 @@ internal static class Program
             return AskPassBroker.RunClientAsync(pipeName, prompt).GetAwaiter().GetResult();
         }
 
+        string? connectionFilePath = args.Length == 1
+            && string.Equals(Path.GetExtension(args[0]), ".sshweave", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetFullPath(args[0])
+                : null;
+
         ThemeManager.DefaultAccent = Accent.Blue;
-        using MainWindowController controller = new();
+        using MainWindowController controller = new(connectionFilePath);
         Application.Create()
             .UseWin32()
             .UseDirect2D()

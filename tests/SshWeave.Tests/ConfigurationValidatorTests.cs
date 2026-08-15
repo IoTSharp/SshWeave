@@ -89,6 +89,24 @@ public sealed class ConfigurationValidatorTests
         ConfigurationValidator.Validate(configuration);
     }
 
+    [Theory]
+    [InlineData("10.*.*.*")]
+    [InlineData("10.165.*.*")]
+    [InlineData("10.51.11.*")]
+    [InlineData("10.51.11.132")]
+    [InlineData("10.51.0.0/16")]
+    public void ValidateAcceptsTransparentTcpRouteExpressions(string expression)
+    {
+        SshWeaveConfiguration configuration = TestConfiguration.Create();
+        configuration.Profiles[0].TransparentTcp = new TransparentTcpRoute
+        {
+            Enabled = true,
+            DestinationCidrs = [expression],
+        };
+
+        ConfigurationValidator.Validate(configuration);
+    }
+
     [Fact]
     public void ValidateRequiresSocksForTransparentTcp()
     {
@@ -108,6 +126,8 @@ public sealed class ConfigurationValidatorTests
 
     [Theory]
     [InlineData("0.0.0.0/0", "禁止接管默认路由")]
+    [InlineData("*.*.*.*", "禁止接管默认路由")]
+    [InlineData("10.*.1.*", "通配符只能连续出现在末尾")]
     [InlineData("10.51.12.35/16", "必须使用规范网络地址")]
     [InlineData("198.18.0.0/24", "与虚拟网卡地址重叠")]
     public void ValidateRejectsUnsafeTransparentTcpCidr(string cidr, string expectedMessage)
@@ -156,6 +176,7 @@ public sealed class ConfigurationValidatorTests
 
             Assert.Equal(SshWeaveConfiguration.CurrentSchema, configuration.Schema);
             Assert.Equal("station", configuration.DefaultProfile);
+            Assert.Equal(["10.51.*.*"], configuration.Profiles[0].TransparentTcp.DestinationCidrs);
         }
         finally
         {

@@ -31,6 +31,9 @@ dotnet publish $projectPath `
     --self-contained true `
     --output $OutputDirectory `
     -p:PublishAot=true
+if ($LASTEXITCODE -ne 0) {
+    throw "Native AOT 发布失败，dotnet 退出码：$LASTEXITCODE"
+}
 
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $OutputDirectory -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD-PARTY-NOTICES.md') -Destination $OutputDirectory -Force

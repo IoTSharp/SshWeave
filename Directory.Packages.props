@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup Label="Desktop dependencies">
     <PackageVersion Include="Aprillz.MewUI.Windows" Version="0.19.1" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
 </Project>

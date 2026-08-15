@@ -62,7 +62,7 @@ public static class ConfigurationStore
             Directory.CreateDirectory(directory);
         }
 
-        // 示例仅使用文档地址，不写入口令、私钥或真实网络端点。
+        // 示例不写入口令或私钥；当前站点默认只接管服务器地址前两段对应的 10.51 网段。
         SshWeaveConfiguration example = new()
         {
             DefaultProfile = "station",
@@ -76,7 +76,7 @@ public static class ConfigurationStore
                     Socks = new SocksForward(),
                     TransparentTcp = new TransparentTcpRoute
                     {
-                        DestinationCidrs = ["10.51.0.0/16"],
+                        DestinationCidrs = ["10.51.*.*"],
                     },
                     TcpForwards =
                     [

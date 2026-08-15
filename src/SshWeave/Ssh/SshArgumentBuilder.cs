@@ -13,7 +13,9 @@ public static class SshArgumentBuilder
         SshProfile profile,
         bool configurationDump = false,
         SshRuntimeForwardPlan? runtimeForwards = null,
-        bool verbose = false)
+        bool verbose = false,
+        // 代理-only 桌面尝试不能等待终端或 SSH_ASKPASS，失败应立即返回给界面。
+        bool forceBatchMode = false)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
@@ -59,7 +61,7 @@ public static class SshArgumentBuilder
             AddOption(arguments, "PreferredAuthentications=password,keyboard-interactive");
             AddOption(arguments, "PubkeyAuthentication=no");
         }
-        else if (profile.BatchMode)
+        else if (profile.BatchMode || forceBatchMode)
         {
             AddOption(arguments, "BatchMode=yes");
             AddOption(arguments, "PasswordAuthentication=no");

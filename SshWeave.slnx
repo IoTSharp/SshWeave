@@ -16,5 +16,11 @@
     <File Path="global.json" />
     <File Path="scripts/publish.ps1" />
     <File Path="scripts/install-windows-tun-dependencies.ps1" />
+    <File Path="scripts/build-windows-msi.ps1" />
+    <File Path="scripts/generate-logo.ps1" />
+  </Folder>
+  <Folder Name="/installer/">
+    <File Path="installer/SshWeave.Installer.wixproj" />
+    <File Path="installer/Product.wxs" />
   </Folder>
 </Solution>

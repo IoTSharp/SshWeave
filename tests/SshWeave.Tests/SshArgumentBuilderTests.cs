@@ -35,6 +35,23 @@ public sealed class SshArgumentBuilderTests
     }
 
     [Fact]
+    public void BuildCanForceBatchModeForAgentOnlyAttempt()
+    {
+        SshProfile profile = TestConfiguration.Create().Profiles[0];
+        profile.AuthenticationMode = AuthenticationModes.KeyFile;
+        profile.BatchMode = false;
+        profile.IdentityFile = "keys/station";
+
+        IReadOnlyList<string> arguments = SshArgumentBuilder.Build(profile, forceBatchMode: true);
+
+        Assert.Contains("BatchMode=yes", arguments);
+        Assert.Contains("PasswordAuthentication=no", arguments);
+        Assert.Contains("KbdInteractiveAuthentication=no", arguments);
+        Assert.Contains("IdentitiesOnly=yes", arguments);
+        Assert.Contains("PreferredAuthentications=publickey", arguments);
+    }
+
+    [Fact]
     public void BuildFormatsIpv6DestinationsWithoutAmbiguousColons()
     {
         SshProfile profile = TestConfiguration.Create().Profiles[0];

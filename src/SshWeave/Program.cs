@@ -9,7 +9,7 @@ namespace SshWeave;
 
 internal static class Program
 {
-    private const string Version = "0.1.0";
+    private const string Version = "0.3.5";
 
     private static async Task<int> Main(string[] args)
     {
@@ -59,6 +59,7 @@ internal static class Program
             "run" => await RunChildAsync(commandArguments, cancellationToken),
             "socks-connect" => await SocksConnectAsync(commandArguments, cancellationToken),
             "ssh-config" => await PrintOpenSshConfigAsync(commandArguments, cancellationToken),
+            "connection-create" => await CreateEncryptedConnectionAsync(commandArguments, cancellationToken),
             "server-config" => PrintServerConfig(commandArguments),
             "server-install" => await InstallServerUserAsync(commandArguments, cancellationToken),
             _ => throw new ConfigurationException($"未知命令：{command}。运行 sshweave help 查看用法。"),
@@ -180,6 +181,48 @@ internal static class Program
         return 0;
     }
 
+    private static async Task<int> CreateEncryptedConnectionAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        CliArguments parsed = CliArguments.Parse(
+            args,
+            ["--config", "--profile", "--output", "--identity-file", "--known-hosts"],
+            ["--secret-stdin", "--force"]);
+        EnsureNoPositionals(parsed);
+        (SshWeaveConfiguration _, SshProfile profile) = await LoadProfileFromParsedAsync(parsed, cancellationToken);
+
+        string output = parsed.GetValue("--output")
+            ?? throw new ConfigurationException("connection-create 需要 --output 指定 .sshweave 文件。");
+        string? identityFile = parsed.GetValue("--identity-file") ?? profile.IdentityFile;
+        if (!string.IsNullOrWhiteSpace(identityFile))
+        {
+            // 生成物内保存密钥正文，打开时不会依赖创建机器上的原路径。
+            profile.IdentityFile = Path.GetFullPath(identityFile);
+        }
+        string? knownHosts = parsed.GetValue("--known-hosts") ?? profile.KnownHostsFile;
+        string? secret = null;
+        if (parsed.HasFlag("--secret-stdin"))
+        {
+            secret = await Console.In.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrEmpty(secret))
+            {
+                throw new ConfigurationException("--secret-stdin 没有从标准输入读到认证口令。");
+            }
+        }
+
+        await EncryptedConnectionFile.CreateAsync(
+            output,
+            profile,
+            identityFile,
+            knownHosts,
+            secret,
+            parsed.HasFlag("--force"),
+            cancellationToken);
+        Console.WriteLine($"已创建当前用户加密连接文件：{Path.GetFullPath(output)}");
+        return 0;
+    }
+
     private static int PrintServerConfig(string[] args)
     {
         CliArguments parsed = CliArguments.Parse(args, ["--user"]);
@@ -246,7 +289,7 @@ internal static class Program
     {
         Console.WriteLine(
             """
-            SshWeave 0.1.0 - 通过标准 OpenSSH 复用远端网络可达性
+            SshWeave 0.3.5 - 通过标准 OpenSSH 复用远端网络可达性
 
             用法：
               sshweave init [--output <文件>] [--force]
@@ -254,6 +297,8 @@ internal static class Program
               sshweave connect [--config <文件>] [--profile <名称>] [--dry-run]
               sshweave run [--config <文件>] [--profile <名称>] -- <程序> [参数...]
               sshweave ssh-config --match <Host模式> [--config <文件>] [--profile <名称>]
+              sshweave connection-create --config <文件> --profile <名称> --output <文件.sshweave>
+                [--identity-file <私钥>] [--known-hosts <文件>] [--secret-stdin] [--force]
               sshweave server-config [--user <用户名>]
               sshweave server-install --authorized-key <公钥文件> [--user <用户名>] [--no-reload]
 

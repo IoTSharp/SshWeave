@@ -28,7 +28,7 @@
         "mtu": 1500,
         "routeMetric": 5,
         "destinationCidrs": [
-          "10.51.0.0/16"
+          "10.51.*.*"
         ]
       },
       "tcpForwards": [

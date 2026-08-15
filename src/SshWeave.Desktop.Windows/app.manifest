@@ -4,7 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+        <!-- 透明 TCP 需要创建 Wintun 网卡和活动路由，桌面入口统一在启动时取得管理员令牌。 -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

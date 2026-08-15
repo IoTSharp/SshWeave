@@ -42,11 +42,24 @@ Windows 桌面控制台使用 MewUI/Direct2D，并单独发布：
 .\scripts\publish.ps1 -RuntimeIdentifier win-x64 -Desktop
 ```
 
+正式 Windows Installer 包使用 WiX 6 构建，安装桌面端、CLI、透明 TCP 数据面和许可证，
+同时注册开始菜单、控制面板品牌图标与带独立图标的 `.sshweave` 文件关联：
+
+```powershell
+.\scripts\build-windows-msi.ps1
+```
+
+生成物位于 `artifacts/packages/SshWeave-<版本>-win-x64.msi`。安装和卸载由 Windows
+Installer 管理，不再使用文件复制脚本。`0.3.5` 起桌面程序入口清单使用
+`requireAdministrator`，从开始菜单或双击 `.sshweave` 启动时会立即显示 Windows UAC，
+确保后续创建 Wintun 网卡和活动路由时已经持有管理员令牌。
+
 桌面控制台管理多个连接账户，支持系统默认认证、密码和私钥文件。密码及密钥口令只在本次
 连接期间驻留内存，通过当前用户可访问的一次性命名管道交给 `SSH_ASKPASS`，不会写入配置、
 命令行或日志。界面可启停 SOCKS5、TCP 映射和压缩，显示 OpenSSH 交互日志、实时连接数与
 本地计量代理统计的上下行字节；关闭主窗口后继续驻留 Windows 托盘，右键菜单可重新打开、
-连接、断开和退出。远端系统用户写操作未在首版启用。
+连接、断开和退出。应用窗口、侧栏、托盘、MSI 和连接文件使用统一品牌资产；SSH、PowerShell、
+`netsh` 和透明通道辅助进程均隐藏在后台。远端系统用户写操作未在首版启用。
 
 ### 2. 创建只能使用通道的服务端用户
 
@@ -119,6 +132,24 @@ sshweave init
 生产环境应预先登记服务端主机密钥并使用 `hostKeyPolicy: "strict"`。`accept-new` 会固定首次
 看到的密钥，但第一次连接仍可能受到中间人攻击。配置中只保存私钥路径，不保存口令或私钥。
 
+需要把连接配置、私钥、固定的 `known_hosts` 条目和可选认证口令交付为一个文件时，可在
+Windows 当前用户上下文创建 DPAPI 加密的 `.sshweave` 文件：
+
+```powershell
+sshweave connection-create `
+  --config .\config.json `
+  --profile station `
+  --known-hosts .\station.known_hosts `
+  --output .\station.sshweave
+```
+
+需要同时保存密码或私钥口令时添加 `--secret-stdin`，口令从标准输入读取，不进入命令行。
+该文件只能由创建它的 Windows 用户解密。安装 MSI 后双击文件会启动桌面端、载入内嵌私钥
+和主机指纹；创建时若私钥旁存在同名 `.pub` 文件，也会一并内嵌，以便 OpenSSH 在
+`IdentitiesOnly=yes` 下匹配 Windows `ssh-agent` 中的身份。未保存认证口令时可输入本次口令，
+也可明确选择“使用 ssh-agent”。私钥只在当前应用会话中展开到受保护的用户本地临时目录，
+目录 ACL 只允许当前用户、SYSTEM 和 Administrators，退出时删除。
+
 ### 4. 登录并使用
 
 先检查本地端口、文件和 OpenSSH 参数：
@@ -176,12 +207,18 @@ Windows 发布物包含经过固定版本和 SHA-256 校验的 `tun2socks 2.6.0`
   "adapterIpv4Cidr": "198.18.0.1/30",
   "mtu": 1500,
   "routeMetric": 5,
-  "destinationCidrs": ["10.51.0.0/16"]
+  "destinationCidrs": ["10.51.*.*"]
 }
 ```
 
+`destinationCidrs` 保持兼容原有规范 CIDR，并追加接受单个 IPv4 地址和连续尾部通配表达式。
+例如 `10.*.*.*`、`10.165.*.*` 和 `10.51.11.*` 会分别规范化为 `10.0.0.0/8`、
+`10.165.0.0/16` 和 `10.51.11.0/24`；当前站点默认 `10.51.*.*`，即只路由
+`10.51.0.0/16`。通配符不得出现在固定地址段之间，`*.*.*.*` 等价默认路由并会被拒绝。
+
 保持 SOCKS5 同时启用，并以管理员身份运行 CLI 或桌面控制台。连接就绪后，TCP 应用可直接
-访问目标地址，例如 Xshell 连接 `10.51.12.35:22`，无需配置代理。SshWeave 只写入
+访问目标地址，例如 VNC 客户端直接连接 `10.51.11.132` 的现场 VNC 端口，无需配置代理或
+本地端口映射。SshWeave 只写入
 `store=active` 的目标路由；正常断开或任一数据面进程退出时会撤销路由和 TUN 地址。
 该候选不承载真实 ICMP 或通用 UDP，管理员实机、异常回滚和 Linux TUN 证据仍按 SW-5
 下一步验证执行。

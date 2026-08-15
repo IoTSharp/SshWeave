@@ -1,0 +1,11 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.3.5</ProductVersion>
+    <PublishDirectory Condition="'$(PublishDirectory)' == ''">$(MSBuildThisFileDirectory)..\artifacts\installer\payload</PublishDirectory>
+    <OutputName>SshWeave-$(ProductVersion)-win-x64</OutputName>
+    <DefineConstants>ProductVersion=$(ProductVersion);PublishDirectory=$(PublishDirectory)</DefineConstants>
+  </PropertyGroup>
+</Project>

@@ -12,13 +12,20 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <MewUIBackend>Direct2D</MewUIBackend>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.2.0</Version>
+    <ApplicationIcon>Assets\SshWeave.ico</ApplicationIcon>
+    <Version>0.3.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Aprillz.MewUI.Windows" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../SshWeave/SshWeave.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\SshWeave-logo.png" LogicalName="SshWeave.Assets.Logo.png" />
+    <EmbeddedResource Include="Assets\SshWeave.ico" LogicalName="SshWeave.Assets.Icon.ico" />
+    <None Update="Assets\SshWeave.ico" TargetPath="SshWeave.ico" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Assets\SshWeave.Connection.ico" TargetPath="SshWeave.Connection.ico" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 
@@ -9,6 +10,62 @@ internal readonly record struct Ipv4Cidr(uint Network, int PrefixLength)
     public IPAddress NetworkAddress => FromUInt32(Network);
 
     public IPAddress Netmask => FromUInt32(PrefixMask(PrefixLength));
+
+    public static bool TryParseRouteExpression(
+        string? value,
+        out Ipv4Cidr cidr,
+        out string error)
+    {
+        string expression = value?.Trim() ?? string.Empty;
+        if (expression.Contains('/', StringComparison.Ordinal))
+        {
+            return TryParse(expression, requireNetworkAddress: true, out cidr, out error);
+        }
+
+        string[] octets = expression.Split('.');
+        if (octets.Length != 4)
+        {
+            cidr = default;
+            error = "必须是有效的 IPv4 CIDR、单个 IPv4 地址或连续尾部通配表达式（如 10.51.*.*）。";
+            return false;
+        }
+
+        uint network = 0;
+        int prefixLength = 32;
+        bool wildcardReached = false;
+        for (int index = 0; index < octets.Length; index++)
+        {
+            string octet = octets[index];
+            if (octet == "*")
+            {
+                if (!wildcardReached)
+                {
+                    prefixLength = index * 8;
+                    wildcardReached = true;
+                }
+                network <<= 8;
+                continue;
+            }
+
+            if (wildcardReached)
+            {
+                cidr = default;
+                error = "通配符只能连续出现在末尾，例如 10.*.*.* 或 10.165.*.*。";
+                return false;
+            }
+            if (!byte.TryParse(octet, NumberStyles.None, CultureInfo.InvariantCulture, out byte parsed))
+            {
+                cidr = default;
+                error = "必须是有效的 IPv4 CIDR、单个 IPv4 地址或连续尾部通配表达式（如 10.51.*.*）。";
+                return false;
+            }
+            network = (network << 8) | parsed;
+        }
+
+        cidr = new Ipv4Cidr(network, prefixLength);
+        error = string.Empty;
+        return true;
+    }
 
     public static bool TryParse(
         string? value,

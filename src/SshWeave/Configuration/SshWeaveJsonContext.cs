@@ -10,4 +10,5 @@ namespace SshWeave.Configuration;
     ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(SshWeaveConfiguration))]
+[JsonSerializable(typeof(EncryptedConnectionPayload))]
 internal sealed partial class SshWeaveJsonContext : JsonSerializerContext;

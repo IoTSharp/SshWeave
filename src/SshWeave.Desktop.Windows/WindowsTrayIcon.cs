@@ -26,6 +26,9 @@ internal sealed unsafe partial class WindowsTrayIcon : IDisposable
     private const uint MenuToggleConnection = 1002;
     private const uint MenuExit = 1003;
     private const int IdiShield = 32518;
+    private const int IdiApplication = 32512;
+    private const uint ImageIcon = 1;
+    private const uint LrShared = 0x00008000;
     private static readonly string WindowClassName = $"SshWeave.Tray.{Environment.ProcessId}";
     private static WindowsTrayIcon? s_current;
 
@@ -140,11 +143,23 @@ internal sealed unsafe partial class WindowsTrayIcon : IDisposable
             Identifier = 1,
             Flags = NifMessage | NifIcon | NifTip,
             CallbackMessage = CallbackMessage,
-            IconHandle = LoadIconW(0, new nint(IdiShield)),
+            IconHandle = LoadApplicationIcon(),
         };
         char* destination = data.Tooltip;
         WriteFixedString(destination, 128, tooltip);
         return data;
+    }
+
+    private static nint LoadApplicationIcon()
+    {
+        nint icon = LoadImageW(
+            GetModuleHandleW(null),
+            new nint(IdiApplication),
+            ImageIcon,
+            16,
+            16,
+            LrShared);
+        return icon != 0 ? icon : LoadIconW(0, new nint(IdiShield));
     }
 
     private void ShowContextMenu()
@@ -298,6 +313,15 @@ internal sealed unsafe partial class WindowsTrayIcon : IDisposable
 
     [LibraryImport("user32.dll")]
     private static partial nint LoadIconW(nint instance, nint iconName);
+
+    [LibraryImport("user32.dll", EntryPoint = "LoadImageW")]
+    private static partial nint LoadImageW(
+        nint instance,
+        nint name,
+        uint type,
+        int desiredWidth,
+        int desiredHeight,
+        uint loadFlags);
 
     [LibraryImport("shell32.dll", EntryPoint = "Shell_NotifyIconW")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -227,7 +227,8 @@ public static partial class ConfigurationValidator
         foreach (string? value in route.DestinationCidrs)
         {
             string field = $"{prefix}.transparentTcp.destinationCidrs";
-            if (!Ipv4Cidr.TryParse(value, requireNetworkAddress: true, out Ipv4Cidr destination, out string error))
+            // 公开配置保留 destinationCidrs 字段，同时追加兼容尾部通配和单地址写法。
+            if (!Ipv4Cidr.TryParseRouteExpression(value, out Ipv4Cidr destination, out string error))
             {
                 errors.Add($"{field} 中的 {value ?? "null"} {error}");
                 continue;

@@ -210,7 +210,8 @@ public sealed class TransparentTcpSession : IAsyncDisposable
     private static Ipv4Cidr[] ParseDestinations(TransparentTcpRoute route) =>
         route.DestinationCidrs.Select(value =>
         {
-            _ = Ipv4Cidr.TryParse(value, true, out Ipv4Cidr destination, out _);
+            // 配置已通过同一解析器校验；这里只把通配表达式规范化为 netsh 使用的 CIDR。
+            _ = Ipv4Cidr.TryParseRouteExpression(value, out Ipv4Cidr destination, out _);
             return destination;
         }).ToArray();
 
@@ -246,13 +247,15 @@ public sealed class TransparentTcpSession : IAsyncDisposable
         }
     }
 
-    private static async Task<IReadOnlyList<string>> FindRouteAliasesAsync(
+    internal static async Task<IReadOnlyList<string>> FindRouteAliasesAsync(
         Ipv4Cidr destination,
         CancellationToken cancellationToken)
     {
+        // Get-NetRoute 对不存在的 -DestinationPrefix 会静默返回退出码 1；先枚举再筛选可正确表达零匹配。
         string script =
             "$ErrorActionPreference = 'Stop'\n"
-            + $"Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '{destination}' -ErrorAction SilentlyContinue | "
+            + "Get-NetRoute -AddressFamily IPv4 -ErrorAction Stop | "
+            + $"Where-Object {{ $_.DestinationPrefix -eq '{destination}' }} | "
             + "ForEach-Object { $_.InterfaceAlias }";
         ProcessResult result = await ProcessExecutor.RunCapturedAsync(
             GetWindowsPowerShellPath(),

@@ -1,0 +1,79 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="SshWeave"
+    Manufacturer="IoTSharp"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="6AF74938-9C4B-47AE-B433-C85B2D48082B"
+    Language="2052"
+    Scope="perMachine"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <SummaryInformation Description="SshWeave SSH 网络接入工具" Manufacturer="IoTSharp" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 SshWeave。" />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="SshWeaveIcon" SourceFile="$(var.PublishDirectory)\SshWeave.ico" />
+    <Property Id="ARPPRODUCTICON" Value="SshWeaveIcon" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="SshWeave">
+        <Component Id="ApplicationFiles" Guid="2E14FC52-C03C-488E-B275-EB0E6DB04D09">
+          <File Id="DesktopExe" Source="$(var.PublishDirectory)\sshweave-desktop.exe" KeyPath="yes">
+            <Shortcut
+              Id="StartMenuShortcut"
+              Directory="ApplicationProgramsFolder"
+              Name="SshWeave"
+              Description="SshWeave SSH 网络接入工具"
+              Advertise="yes"
+              WorkingDirectory="INSTALLFOLDER" />
+          </File>
+          <File Id="CliExe" Source="$(var.PublishDirectory)\sshweave.exe" />
+          <File Id="Tun2SocksExe" Source="$(var.PublishDirectory)\tun2socks.exe" />
+          <File Id="WintunDll" Source="$(var.PublishDirectory)\wintun.dll" />
+          <File Id="LicenseFile" Source="$(var.PublishDirectory)\LICENSE" />
+          <File Id="ThirdPartyNoticesFile" Source="$(var.PublishDirectory)\THIRD-PARTY-NOTICES.md" />
+          <File Id="WintunLicenseFile" Source="$(var.PublishDirectory)\WINTUN-LICENSE.txt" />
+          <File Id="ApplicationIconFile" Source="$(var.PublishDirectory)\SshWeave.ico" />
+          <File Id="ConnectionIconFile" Source="$(var.PublishDirectory)\SshWeave.Connection.ico" />
+        </Component>
+
+        <Component Id="ConnectionFileAssociation" Guid="12A6211A-4D16-49DE-A55A-D5DAC527DBDB">
+          <!-- 文件关联由 MSI 管理；双击时只把连接文件绝对路径传给桌面程序。 -->
+          <RegistryKey Root="HKLM" Key="Software\Classes\.sshweave">
+            <RegistryValue Type="string" Value="SshWeave.Connection" KeyPath="yes" />
+          </RegistryKey>
+          <RegistryKey Root="HKLM" Key="Software\Classes\SshWeave.Connection">
+            <RegistryValue Type="string" Value="SshWeave 加密连接文件" />
+          </RegistryKey>
+          <RegistryKey Root="HKLM" Key="Software\Classes\SshWeave.Connection\DefaultIcon">
+            <RegistryValue Type="string" Value="[INSTALLFOLDER]SshWeave.Connection.ico,0" />
+          </RegistryKey>
+          <RegistryKey Root="HKLM" Key="Software\Classes\SshWeave.Connection\shell\open\command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]sshweave-desktop.exe&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="SshWeave">
+        <Component Id="StartMenuFolder" Guid="E11CCBBF-7AE7-4E69-BA01-06035D6B9372">
+          <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+          <RegistryValue
+            Root="HKCU"
+            Key="Software\IoTSharp\SshWeave"
+            Name="StartMenuFolder"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="SshWeave" Level="1">
+      <ComponentRef Id="ApplicationFiles" />
+      <ComponentRef Id="ConnectionFileAssociation" />
+      <ComponentRef Id="StartMenuFolder" />
+    </Feature>
+  </Package>
+</Wix>

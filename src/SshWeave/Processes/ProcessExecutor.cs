@@ -22,6 +22,7 @@ public static class ProcessExecutor
         CancellationToken cancellationToken = default)
     {
         ProcessStartInfo startInfo = CreateStartInfo(executable, arguments, workingDirectory);
+        ConfigureBackgroundProcess(startInfo);
         startInfo.RedirectStandardOutput = true;
         startInfo.RedirectStandardError = true;
 
@@ -80,7 +81,7 @@ public static class ProcessExecutor
         string? workingDirectory = null)
     {
         ProcessStartInfo startInfo = CreateStartInfo(executable, arguments, workingDirectory);
-        startInfo.CreateNoWindow = true;
+        ConfigureBackgroundProcess(startInfo);
         startInfo.RedirectStandardOutput = true;
         startInfo.RedirectStandardError = true;
         if (environment is not null)
@@ -153,5 +154,12 @@ public static class ProcessExecutor
         }
 
         return startInfo;
+    }
+
+    private static void ConfigureBackgroundProcess(ProcessStartInfo startInfo)
+    {
+        // 桌面端的 SSH 探测、PowerShell、netsh 和 TUN 辅助都在后台运行，输出由应用捕获。
+        startInfo.CreateNoWindow = true;
+        startInfo.WindowStyle = ProcessWindowStyle.Hidden;
     }
 }

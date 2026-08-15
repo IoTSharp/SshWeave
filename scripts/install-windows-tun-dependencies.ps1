@@ -46,6 +46,32 @@ function Assert-FileHash {
     }
 }
 
+function Invoke-DependencyDownload {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Uri,
+        [Parameter(Mandatory = $true)]
+        [string]$OutFile
+    )
+
+    try {
+        Invoke-WebRequest -Uri $Uri -OutFile $OutFile
+        return
+    }
+    catch {
+        $directFailure = $_.Exception.Message
+        Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+    }
+
+    try {
+        # 外网直连受限时仅让当前依赖下载经过本机代理，不改变内网 SSH 或其它进程环境。
+        Invoke-WebRequest -Uri $Uri -OutFile $OutFile -Proxy 'http://127.0.0.1:7890'
+    }
+    catch {
+        throw "依赖下载直连及本机代理均失败：$Uri`n直连：$directFailure`n代理：$($_.Exception.Message)"
+    }
+}
+
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
 $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
@@ -58,8 +84,8 @@ try {
     $tunUrl = "https://github.com/xjasonlyu/tun2socks/releases/download/v$tun2SocksVersion/$($payload.TunArchive)"
     $wintunUrl = "https://www.wintun.net/builds/wintun-$wintunVersion.zip"
 
-    Invoke-WebRequest -Uri $tunUrl -OutFile $tunArchivePath
-    Invoke-WebRequest -Uri $wintunUrl -OutFile $wintunArchivePath
+    Invoke-DependencyDownload -Uri $tunUrl -OutFile $tunArchivePath
+    Invoke-DependencyDownload -Uri $wintunUrl -OutFile $wintunArchivePath
     Assert-FileHash -Path $tunArchivePath -ExpectedHash $payload.TunArchiveHash
     Assert-FileHash -Path $wintunArchivePath -ExpectedHash $wintunArchiveHash
 

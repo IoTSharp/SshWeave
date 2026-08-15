@@ -45,18 +45,44 @@ internal sealed class MainWindowController : IDisposable
     private readonly Button _disconnectButton;
     private readonly Button _saveButton;
     private readonly Button _deleteButton;
+    private readonly string? _connectionFileError;
     private SshWeaveConfiguration _configuration;
     private SshProfile _selectedProfile;
+    private SshProfile? _connectionFileProfile;
+    private OpenedConnectionFile? _openedConnectionFile;
     private ObservedSshSession? _session;
     private WindowsTrayIcon? _trayIcon;
+    private DispatcherTimer? _startupTimer;
     private bool _exitRequested;
     private bool _operationInProgress;
 
-    public MainWindowController()
+    public MainWindowController(string? connectionFilePath = null)
     {
         _configuration = LoadConfiguration();
-        _profiles = new ObservableCollection<SshProfile>(_configuration.Profiles);
-        _selectedProfile = _profiles[0];
+        List<SshProfile> profiles = [.. _configuration.Profiles];
+        _selectedProfile = profiles[0];
+        if (!string.IsNullOrWhiteSpace(connectionFilePath))
+        {
+            try
+            {
+                _openedConnectionFile = EncryptedConnectionFile.OpenAsync(connectionFilePath)
+                    .GetAwaiter()
+                    .GetResult();
+                _connectionFileProfile = _openedConnectionFile.Profile;
+                profiles.RemoveAll(profile => string.Equals(
+                    profile.Name,
+                    _connectionFileProfile.Name,
+                    StringComparison.OrdinalIgnoreCase));
+                profiles.Insert(0, _connectionFileProfile);
+                _selectedProfile = _connectionFileProfile;
+            }
+            catch (Exception exception) when (
+                exception is ConfigurationException or IOException or UnauthorizedAccessException)
+            {
+                _connectionFileError = exception.Message;
+            }
+        }
+        _profiles = new ObservableCollection<SshProfile>(profiles);
 
         _profileList = new ListBox()
             .ItemHeight(44)
@@ -90,7 +116,7 @@ internal sealed class MainWindowController : IDisposable
         };
         _transparentCidrsBox = new MultiLineTextBox
         {
-            Placeholder = "10.51.0.0/16",
+            Placeholder = "10.51.*.*",
             Wrap = false,
         };
         _logBox = new MultiLineTextBox { IsReadOnly = true, Wrap = false };
@@ -106,7 +132,7 @@ internal sealed class MainWindowController : IDisposable
         _saveButton = new Button().Content("保存").OnClick(async () => _ = await SaveSelectedProfileAsync());
         _deleteButton = new Button().Content("删除").OnClick(async () => await DeleteSelectedProfileAsync());
 
-        Window = new Window()
+        Window = new Window { Icon = ApplicationBrand.Icon }
             .Resizable(1180, 760, minWidth: 980, minHeight: 680)
             .Title("SshWeave")
             .Padding(0)
@@ -124,6 +150,21 @@ internal sealed class MainWindowController : IDisposable
 
         _profileList.SelectedItem = _selectedProfile;
         LoadEditor(_selectedProfile);
+        if (_openedConnectionFile is not null)
+        {
+            AppendLog(new SessionLogEntry(
+                DateTimeOffset.Now,
+                SessionLogCategory.Lifecycle,
+                $"已打开当前用户加密连接配置 {_selectedProfile.Name}。"));
+        }
+        else if (_connectionFileError is not null)
+        {
+            AppendLog(new SessionLogEntry(
+                DateTimeOffset.Now,
+                SessionLogCategory.Lifecycle,
+                _connectionFileError,
+                IsError: true));
+        }
         UpdateControls();
         _metricsTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500));
         _metricsTimer.Tick += UpdateMetrics;
@@ -133,6 +174,8 @@ internal sealed class MainWindowController : IDisposable
 
     public void Dispose()
     {
+        _startupTimer?.Dispose();
+        _startupTimer = null;
         _metricsTimer.Dispose();
         _trayIcon?.Dispose();
         if (_session is not null)
@@ -140,6 +183,8 @@ internal sealed class MainWindowController : IDisposable
             _session.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _session = null;
         }
+        _openedConnectionFile?.Dispose();
+        _openedConnectionFile = null;
     }
 
     private Grid BuildRoot() => new Grid()
@@ -156,11 +201,22 @@ internal sealed class MainWindowController : IDisposable
             .Children(
                 new StackPanel()
                     .DockTop()
-                    .Vertical()
-                    .Spacing(4)
+                    .Horizontal()
+                    .Spacing(10)
                     .Children(
-                        new Label().Text("SshWeave").FontSize(22).Bold(),
-                        _statusLabel),
+                        new Image
+                        {
+                            Source = ApplicationBrand.Logo,
+                            Width = 42,
+                            Height = 42,
+                            StretchMode = Stretch.Uniform,
+                        },
+                        new StackPanel()
+                            .Vertical()
+                            .Spacing(2)
+                            .Children(
+                                new Label().Text("SshWeave").FontSize(22).Bold(),
+                                _statusLabel)),
 
                 new StackPanel()
                     .DockBottom()
@@ -280,7 +336,7 @@ internal sealed class MainWindowController : IDisposable
                     .Spacing(16)
                     .Children(_socksEnabledToggle, _transparentTcpToggle, _compressionToggle)),
                 Field("SOCKS5 端口", _socksPortBox),
-                Field("透明 TCP 网段", _transparentCidrsBox.Height(88)),
+                Field("TCP 直通路由", _transparentCidrsBox.Height(88)),
                 Field("TCP 映射", _tcpForwardsBox.Height(140)),
                 new StackPanel()
                     .Horizontal()
@@ -393,7 +449,7 @@ internal sealed class MainWindowController : IDisposable
         TransparentTcpRoute transparentTcp = profile.TransparentTcp ?? new TransparentTcpRoute();
         _transparentTcpToggle.IsChecked = transparentTcp.Enabled;
         _transparentCidrsBox.Text = transparentTcp.DestinationCidrs.Count == 0
-            ? "10.51.0.0/16"
+            ? "10.51.*.*"
             : string.Join(Environment.NewLine, transparentTcp.DestinationCidrs);
         _tcpForwardsBox.Text = FormatTcpForwards(profile.TcpForwards);
         RefreshEndpointSummary();
@@ -403,6 +459,7 @@ internal sealed class MainWindowController : IDisposable
     {
         try
         {
+            bool isConnectionFileProfile = ReferenceEquals(_selectedProfile, _connectionFileProfile);
             SshProfile updated = ReadEditor();
             int index = _profiles.IndexOf(_selectedProfile);
             if (_profiles.Where((_, itemIndex) => itemIndex != index)
@@ -416,11 +473,21 @@ internal sealed class MainWindowController : IDisposable
             _profileList.SelectedItem = updated;
             _configuration.Profiles = [.. _profiles];
             _configuration.DefaultProfile = updated.Name;
-            await ConfigurationStore.SaveAsync(_configurationPath, _configuration);
+            if (isConnectionFileProfile)
+            {
+                // 双击打开的配置只存在于当前进程，不把临时密钥路径写回普通配置。
+                _connectionFileProfile = updated;
+            }
+            else
+            {
+                await ConfigurationStore.SaveAsync(_configurationPath, _configuration);
+            }
             AppendLog(new SessionLogEntry(
                 DateTimeOffset.Now,
                 SessionLogCategory.Lifecycle,
-                $"配置 {updated.Name} 已保存。"));
+                isConnectionFileProfile
+                    ? $"加密连接配置 {updated.Name} 已载入当前会话。"
+                    : $"配置 {updated.Name} 已保存。"));
             RefreshEndpointSummary();
             await ProbeCapabilitiesAsync();
             return true;
@@ -538,6 +605,10 @@ internal sealed class MainWindowController : IDisposable
                 return;
             }
             string? secret = NullIfWhiteSpace(_secretBox.Password);
+            if (secret is null && ReferenceEquals(_selectedProfile, _connectionFileProfile))
+            {
+                secret = _openedConnectionFile?.AuthenticationSecret;
+            }
             if (_selectedProfile.AuthenticationMode == AuthenticationModes.Password && secret is null)
             {
                 throw new ConfigurationException("密码认证需要输入本次连接密码。");
@@ -566,12 +637,14 @@ internal sealed class MainWindowController : IDisposable
         catch (Exception exception) when (exception is ConfigurationException or IOException or InvalidOperationException)
         {
             _statusLabel.Text = "连接失败";
+            string message = BuildConnectionErrorMessage(exception);
+            _secretBox.Password = string.Empty;
             AppendLog(new SessionLogEntry(
                 DateTimeOffset.Now,
                 SessionLogCategory.Lifecycle,
-                exception.Message,
+                message,
                 IsError: true));
-            ShowError(exception.Message);
+            ShowError(message);
         }
         finally
         {
@@ -704,10 +777,55 @@ internal sealed class MainWindowController : IDisposable
         _trayIcon.Install("SshWeave - 未连接");
         _metricsTimer.Start();
         _ = ProbeCapabilitiesAsync();
+
+        // 一次性 UI 定时器只会在平台消息循环开始泵送后触发，避免启动模态框被静默丢弃。
+        _startupTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(100));
+        _startupTimer.Tick += OpenStartupConnectionFile;
+        _startupTimer.Start();
+    }
+
+    private void OpenStartupConnectionFile()
+    {
+        _startupTimer?.Stop();
+        _startupTimer?.Dispose();
+        _startupTimer = null;
+        _ = OpenStartupConnectionFileAsync();
+    }
+
+    private async Task OpenStartupConnectionFileAsync()
+    {
+        if (_connectionFileError is not null)
+        {
+            Window.Activate();
+            ShowError(_connectionFileError);
+        }
+        else if (_openedConnectionFile?.ConnectOnOpen == true)
+        {
+            Window.Activate();
+            if (_selectedProfile.AuthenticationMode == AuthenticationModes.KeyFile
+                && string.IsNullOrEmpty(_openedConnectionFile.AuthenticationSecret))
+            {
+                AuthenticationPromptResult? authentication = await PromptForKeyPassphraseAsync();
+                if (authentication is null)
+                {
+                    _statusLabel.Text = "等待密钥口令";
+                    return;
+                }
+                if (authentication.Secret is not null)
+                {
+                    _secretBox.Password = authentication.Secret;
+                }
+            }
+
+            // 文件关联入口可使用本次口令或已载入的 ssh-agent 身份，随后自动建立通道。
+            await ConnectAsync();
+        }
     }
 
     private void OnClosed()
     {
+        _startupTimer?.Dispose();
+        _startupTimer = null;
         _metricsTimer.Stop();
         _trayIcon?.Dispose();
         _trayIcon = null;
@@ -848,6 +966,62 @@ internal sealed class MainWindowController : IDisposable
         }
     }
 
+    private async Task<AuthenticationPromptResult?> PromptForKeyPassphraseAsync()
+    {
+        PasswordBox passphraseBox = new PasswordBox().Placeholder("SSH 私钥口令");
+        AuthenticationPromptResult? result = null;
+        Window dialog = null!;
+        dialog = new Window()
+            .Resizable(480, 250, minWidth: 440, minHeight: 230)
+            .Title("SshWeave - SSH 私钥口令")
+            .Padding(20)
+            .Content(new StackPanel()
+                .Vertical()
+                .Spacing(14)
+                .Children(
+                    new Label().Text("SSH 私钥口令").FontSize(20).Bold(),
+                    new Label().Text($"{_selectedProfile.User}@{_selectedProfile.Host}:{_selectedProfile.Port}"),
+                    new Label().Text("输入本次口令，或使用 Windows ssh-agent 中已载入的同一密钥。"),
+                    passphraseBox,
+                    new StackPanel()
+                        .Horizontal()
+                        .Right()
+                        .Spacing(8)
+                        .Children(
+                            new Button().Content("取消").OnClick(() => dialog.Close()),
+                            new Button().Content("使用 ssh-agent").OnClick(() =>
+                            {
+                                result = new AuthenticationPromptResult(Secret: null);
+                                dialog.Close();
+                            }),
+                            new Button().Content("连接").OnClick(() =>
+                            {
+                                string? passphrase = NullIfWhiteSpace(passphraseBox.Password);
+                                if (passphrase is null)
+                                {
+                                    return;
+                                }
+                                result = new AuthenticationPromptResult(passphrase);
+                                passphraseBox.Password = string.Empty;
+                                dialog.Close();
+                            }))));
+        // 异步模态窗口允许启动阶段的消息循环继续运行，避免双击文件后只留下托盘进程。
+        await dialog.ShowDialogAsync(Window);
+        passphraseBox.Password = string.Empty;
+        return result;
+    }
+
+    private string BuildConnectionErrorMessage(Exception exception)
+    {
+        if (ReferenceEquals(_selectedProfile, _connectionFileProfile)
+            && _selectedProfile.AuthenticationMode == AuthenticationModes.KeyFile
+            && exception.Message.Contains("退出码为 255", StringComparison.Ordinal))
+        {
+            return "SSH 密钥认证失败。请确认私钥口令正确，或先把该密钥载入 Windows ssh-agent 后重试。";
+        }
+        return exception.Message;
+    }
+
     private void ShowError(string message) => NativeMessageBox.Show(
         Window.Handle,
         message,
@@ -884,6 +1058,8 @@ internal sealed class MainWindowController : IDisposable
         }
         return forwards;
     }
+
+    private sealed record AuthenticationPromptResult(string? Secret);
 
     private static List<string> ParseCidrs(string value) => value
         .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
